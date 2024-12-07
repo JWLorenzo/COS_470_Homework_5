@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 import random
-import math
 import pandas as pd
 import numpy as np
 import os
@@ -45,8 +44,8 @@ def get_Trainingset(
     else:
         trainingset = dataset[~dataset.index.isin(compareSet.index)]
     # Normalize
-    features = trainingset.iloc[:, 1:13]
-    trainingset.iloc[:, 1:13] = scaler.transform(features)
+    features = trainingset.iloc[:, 2:13]
+    trainingset.iloc[:, 2:13] = scaler.transform(features)
 
     return trainingset.drop(columns=["YEAR", "TEAM"])
 
@@ -64,8 +63,8 @@ def get_Testset(
         # create a dataframe that is a random selection
 
     scaler = StandardScaler()
-    features = testset.iloc[:, 1:13]
-    testset.iloc[:, 1:13] = scaler.fit_transform(features)
+    features = testset.iloc[:, 2:13]
+    testset.iloc[:, 2:13] = scaler.fit_transform(features)
     return testset.drop(columns=["YEAR", "TEAM"]), scaler
 
 
@@ -144,6 +143,16 @@ def parse_Arguments():
         help="Number of epochs",
     )
 
+    parser.add_argument(
+        "-l",
+        "--learn",
+        nargs="?",
+        type=float,
+        const=0.0001,
+        default=0.0001,
+        help="Learning rate",
+    )
+
     return parser.parse_args()
 
 
@@ -216,6 +225,7 @@ def main() -> None:
         DATASET, TEST_FRAME, TRAINING_SPLIT_PERCENT, TRAINING_SPLIT_YEARS, SCALER
     )
     EPOCHS = ARGS.epochs
+    LEARNING_RATE = ARGS.learn
 
     train_Loader = create_Datasets(TRAINING_FRAME, BATCH_SIZE)
     test_Loader = create_Datasets(TEST_FRAME, BATCH_SIZE)
@@ -232,7 +242,7 @@ def main() -> None:
     ).to(device)
 
     loss_function = nn.MSELoss()
-    optimizer = torch.optim.SGD(MODEL.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(MODEL.parameters(), lr=LEARNING_RATE)
 
     # Simulating training
 
