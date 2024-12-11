@@ -17,6 +17,7 @@ import sys
 import torch.utils.data as data_utils
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
 
 
 def load_Dataset(filename: str) -> pd.DataFrame:
@@ -76,9 +77,6 @@ def create_Datasets(dataset: pd.DataFrame, batch_size) -> data_utils.DataLoader:
     )
 
     return dataset_Loader
-
-
-# W,G,EFG,EFGD,TOR,TORD,ORB,DRB,FTR,FTRD,2P_O,2P_D,3P_O,3P_D,ADJ_T,YEAR,TEAM
 
 
 class CustomDataset(data_utils.Dataset):
@@ -153,6 +151,14 @@ def parse_Arguments():
         help="Learning rate",
     )
 
+    parser.add_argument(
+        "-pl",
+        "--plot",
+        type=bool,
+        default=False,
+        help="Generate Matplotlib Plots?",
+    )
+
     return parser.parse_args()
 
 
@@ -163,7 +169,6 @@ def train(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
 ) -> None:
-    # time for a training montage!
     size = len(dataloader.dataset)
     for batch, (x, y) in enumerate(dataloader):
         x, y = x.to(device), y.to(device)
@@ -185,7 +190,7 @@ def test(
     model: nn.Module,
     loss_fn: nn.Module,
     device: torch.device,
-) -> None:
+) -> tuple[float, float]:
     num_batches = len(dataloader)
     test_loss = 0
 
@@ -210,14 +215,28 @@ def test(
     r2 = r2_score(all_true, all_preds)
 
     print(f"Test MSE: {test_loss:>8f} R²: {r2:.4f}")
+    return test_loss, r2
+
+
+def create_Plot(
+    x_axis: list[int], y_axis: list[float], x_title: str, y_title: str, plot_title: str
+) -> None:
+    plt.plot(x_axis, y_axis)
+    plt.xlabel(x_title)
+    plt.ylabel(y_title)
+    plt.title(plot_title)
+
+    plt.show()
 
 
 def main() -> None:
+    mse_list = []
+    r2_list = []
     ARGS = parse_Arguments()
     DATASET = load_Dataset(ARGS.file)
     BATCH_SIZE = ARGS.batch
     TRAINING_SPLIT_PERCENT = ARGS.percent
-    TRAINING_SPLIT_YEARS = random.choices(range(ARGS.years[0], ARGS.years[1] + 1), k=2)
+    TRAINING_SPLIT_YEARS = [ARGS.years[0], ARGS.years[1]]
     TEST_FRAME, SCALER = get_Testset(
         DATASET, TRAINING_SPLIT_PERCENT, TRAINING_SPLIT_YEARS
     )
@@ -226,6 +245,7 @@ def main() -> None:
     )
     EPOCHS = ARGS.epochs
     LEARNING_RATE = ARGS.learn
+    ENABLE_PLOT = ARGS.plot
 
     train_Loader = create_Datasets(TRAINING_FRAME, BATCH_SIZE)
     test_Loader = create_Datasets(TEST_FRAME, BATCH_SIZE)
@@ -249,8 +269,16 @@ def main() -> None:
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n")
         train(train_Loader, MODEL, loss_function, optimizer, device)
-        test(test_Loader, MODEL, loss_function, device)
+        mse, r2 = test(test_Loader, MODEL, loss_function, device)
+        mse_list.append(mse)
+        r2_list.append(r2)
+
     print("Finished!")
+
+    if ENABLE_PLOT:
+        create_Plot(list(range(EPOCHS)), r2_list, "Epoch", "R2", "R2 Over Time")
+
+        create_Plot(list(range(EPOCHS)), mse_list, "Epoch", "MSE", "MSE Over Time")
 
 
 if __name__ == "__main__":

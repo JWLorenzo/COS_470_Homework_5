@@ -13,6 +13,9 @@ Dr. Hutchinson
 #### Library Requirements:
 - Check requirements.txt
 
+## Architecture
+
+
 ## Howto
 ### Quickstart Commands: 
 * I use Python 3.12, but it will depend on what version you use:
