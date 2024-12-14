@@ -15,15 +15,13 @@ Dr. Hutchinson
 
 ## Write-Up
 
-I have several methods for generating and dividing the data sets. I have arguments that allow the data set to be divided by years, a flat percent of the dataset, and a percent of schools. 
+I have implemented several methods for generating and partitioning the dataset. The arguments in my code allow the dataset to be divided in different ways: by specific years, a fixed percentage of the dataset, and a percentage of schools. This flexibility enables the creation of various training and testing sets, which could be useful for different experimental setups.
 
-I assume there are some improvements that can be made to my architecture, but I tried out 5 linear layers where it went 12 -> 17, 17 -> 17, 17 -> 8, 8 -> 2, 2 -> 1. I used the ReLU activation function since the only other type I thought could be viable was the leaky_ReLU.
+Regarding the model architecture, I used five linear layers in my network with the following configuration: 12 → 17 → 17 → 8 → 2 → 1. I selected the ReLU activation function as it is widely used in such regression tasks. While I considered using Leaky ReLU as an alternative, I opted to stick with ReLU for simplicity and familiarity, as it is effective for many tasks.
 
-For my hyperparameters, I ended up with a batch size of 17, 100 epochs, and a learning rate of .00001. After talking to my peers, it seems the data set is quite resilient to modification, so it didn't do a lot to change the r^2 value as the attached graphs show that it flattens out (Figure_1_MSE.png, Figure_2_R2.png, Figure_3_Loss.png). 
+For hyperparameters, I selected a batch size of 17, 100 epochs, and a learning rate of 0.00001. After discussing with my peers, it became clear that the dataset is fairly resilient to small changes, and adjusting the hyperparameters didn’t result in significant changes in the R² value. This is reflected in the graphs, which show that the R² values stabilize after 40 epochs (see Figures 1, 2, and 3 for MSE, R², and Loss, respectively). These graphs indicate that the model achieves a certain point of convergence, where further changes to the parameters did not improve performance significantly.
 
-Overall, the assignment was quite enjoyable. It took some time to get the network set up properly, but once it was set up, it was smooth sailing. 
-
-I thought that it was quite interesting how the MSE and Loss both follow identical graphs, and then the R^2 follows the same graph but flipped.
+Overall, I found the assignment quite enjoyable. It took some time to properly set up the network and get everything working smoothly, but once that was done, training and evaluation proceeded without many issues. The most interesting part of the process was observing how the MSE and Loss follow identical trends in the graphs, with R² following the opposite trend. This is expected in regression tasks, as the MSE reflects the error magnitude, while R² measures the proportion of variance explained by the model.
 
 ## Howto
 ### Quickstart Commands: 
