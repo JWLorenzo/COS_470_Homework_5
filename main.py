@@ -4,7 +4,6 @@
 # Instructor: Dr. Hutchinson
 # Date: 11/22/24 -
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,58 +19,85 @@ from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 
 
+# Function to load the dataset from a specified file
 def load_Dataset(filename: str) -> pd.DataFrame:
-    dir_Path = os.getcwd()
+    dir_Path = os.getcwd()  # Get current working directory
     if os.path.exists(os.path.join(dir_Path, filename)) or os.path.exists(filename):
-        dataset = pd.read_csv(filename)
+        dataset = pd.read_csv(filename)  # Read the CSV file into a pandas DataFrame
         return dataset
     else:
         print(f"Invalid Path! {os.path.join(dir_Path, filename)} nor {filename} exist.")
-        sys.exit(1)
+        sys.exit(1)  # Exit if the file doesn't exist
 
 
-def get_Trainingset(
+# Function to split the dataset into training and testing sets
+def get_Datasets(
     dataset: pd.DataFrame,
-    compareSet: pd.DataFrame,
     trainingPercent: float,
+    trainingSchool: float,
     trainingYears: list[int, int],
-    scaler: StandardScaler,
-) -> pd.DataFrame:
-    if not trainingPercent:
-        trainingset = dataset[
-            (dataset["YEAR"] != trainingYears[0])
-            & (dataset["YEAR"] != trainingYears[1])
-        ]
+    save: bool,
+    trainFile: str,
+    testFile: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    schoolset = dataset["TEAM"].unique()  # Get unique schools from the dataset
+    schoolList = []  # List of schools to be used for testing
+    if (testFile is not None and os.path.exists(testFile)) and (
+        trainFile is not None and os.path.exists(trainFile)
+    ):
+        # If train and test files are provided, load them
+        if not trainingPercent:
+            # Split based on years if no percent is specified
+            testset = dataset[
+                (dataset["YEAR"] == trainingYears[0])
+                | (dataset["YEAR"] == trainingYears[1])
+            ]
+            trainingset = dataset[
+                (dataset["YEAR"] != trainingYears[0])
+                & (dataset["YEAR"] != trainingYears[1])
+            ]
+        elif trainingSchool:
+            # Split based on a percentage of schools
+            schoolList = random.sample(
+                schoolset, k=round(len(schoolset) * trainingSchool)
+            )
+            testset = dataset[dataset["TEAM"].isin(schoolList)]
+            trainingset = dataset[~dataset["NAME"].isin(schoolList)]
+        else:
+            # Split by a flat percentage
+            testset = dataset.sample(frac=trainingPercent)
+            trainingset = dataset[~dataset.index.isin(testset.index)]
+
+        # Optionally save the datasets to CSV files
+        if save:
+            testset.to_csv("testing.csv", index=False)
+            trainingset.to_csv("training.csv", index=False)
     else:
-        trainingset = dataset[~dataset.index.isin(compareSet.index)]
-    # Normalize
-    features = trainingset.iloc[:, 2:13]
-    trainingset.iloc[:, 2:13] = scaler.transform(features)
+        # If no files are provided, load the datasets
+        testset = load_Dataset(testFile)
+        trainingset = load_Dataset(trainFile)
 
-    return trainingset.drop(columns=["YEAR", "TEAM"])
+    # Normalize the features of the training and test datasets
+    scaler = StandardScaler()  # Create a StandardScaler object
+    train_features = trainingset.iloc[:, 2:13]  # Select feature columns
+    test_features = testset.iloc[:, 2:13]  # Select feature columns
+    trainingset.iloc[:, 2:13] = scaler.fit_transform(
+        train_features
+    )  # Fit and transform training data
+    testset.iloc[:, 2:13] = scaler.fit_transform(test_features)  # Transform test data
 
-
-def get_Testset(
-    dataset: pd.DataFrame, trainingPercent: float, trainingYears: list[int, int]
-) -> tuple[pd.DataFrame, StandardScaler]:
-    if not trainingPercent:
-        testset = dataset[
-            (dataset["YEAR"] == trainingYears[0])
-            | (dataset["YEAR"] == trainingYears[1])
-        ]
-    else:
-        testset = dataset.sample(frac=trainingPercent)
-        # create a dataframe that is a random selection
-
-    scaler = StandardScaler()
-    features = testset.iloc[:, 2:13]
-    testset.iloc[:, 2:13] = scaler.fit_transform(features)
-    return testset.drop(columns=["YEAR", "TEAM"]), scaler
+    # Drop non-feature columns ('YEAR' and 'TEAM') before returning
+    return (
+        trainingset.drop(columns=["YEAR", "TEAM"]),
+        testset.drop(columns=["YEAR", "TEAM"]),
+    )
 
 
+# Function to create DataLoader from a pandas DataFrame
 def create_Datasets(dataset: pd.DataFrame, batch_size) -> data_utils.DataLoader:
-    loaded_Dataset = CustomDataset(dataset)
+    loaded_Dataset = CustomDataset(dataset)  # Create a custom dataset
 
+    # Create a DataLoader to handle batching and shuffling
     dataset_Loader = data_utils.DataLoader(
         dataset=loaded_Dataset, batch_size=batch_size, shuffle=True
     )
@@ -79,22 +105,28 @@ def create_Datasets(dataset: pd.DataFrame, batch_size) -> data_utils.DataLoader:
     return dataset_Loader
 
 
+# Custom Dataset class to handle the data in batches
 class CustomDataset(data_utils.Dataset):
     def __init__(self, dataframe: pd.DataFrame):
+        # Convert the features and targets into tensors
         self.data = torch.tensor(dataframe.iloc[:, 1:13].values, dtype=torch.float32)
         self.targets = torch.tensor(dataframe.iloc[:, 0].values, dtype=torch.float32)
 
     def __len__(self):
+        # Return the length of the dataset (number of samples)
         return len(self.data)
 
     def __getitem__(self, index):
+        # Return the data and target at the given index
         return self.data[index], self.targets[index]
 
 
+# Function to parse command line arguments
 def parse_Arguments():
     parser = argparse.ArgumentParser(
         prog="Homework_5", formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    # Define arguments for dataset paths, hyperparameters, and plot options
     parser.add_argument(
         "-f",
         "--file",
@@ -103,7 +135,19 @@ def parse_Arguments():
         default="homework5_data.csv",
         help="Dataset Path",
     )
-
+    parser.add_argument(
+        "-te", "--test", nargs="?", type=str, default="None", help="Test Dataset Path"
+    )
+    parser.add_argument(
+        "-tr", "--train", nargs="?", type=str, default="None", help="Train Dataset Path"
+    )
+    parser.add_argument(
+        "-sv",
+        "--save",
+        action="store_true",
+        default=False,
+        help="Save Datasets to Files",
+    )
     parser.add_argument(
         "-p",
         "--percent",
@@ -111,7 +155,7 @@ def parse_Arguments():
         type=float,
         const=0.10,
         default=None,
-        help="How much of the dataset split to training",
+        help="Training Split Percentage",
     )
     parser.add_argument(
         "-y",
@@ -119,72 +163,77 @@ def parse_Arguments():
         nargs="+",
         type=int,
         default=[2008, 2024],
-        help="How much of the dataset split to training",
+        help="Training Years",
     )
     parser.add_argument(
-        "-b",
-        "--batch",
-        nargs="?",
-        type=int,
-        const=64,
-        default=64,
-        help="Batch Size",
+        "-b", "--batch", nargs="?", type=int, const=64, default=64, help="Batch Size"
     )
-
     parser.add_argument(
         "-e",
         "--epochs",
         nargs="?",
         type=int,
-        const=100,
-        default=100,
-        help="Number of epochs",
+        const=200,
+        default=200,
+        help="Number of Epochs",
     )
-
     parser.add_argument(
         "-l",
         "--learn",
         nargs="?",
         type=float,
-        const=0.0001,
-        default=0.0001,
-        help="Learning rate",
+        const=0.00001,
+        default=0.00001,
+        help="Learning Rate",
     )
-
     parser.add_argument(
-        "-pl",
-        "--plot",
-        type=bool,
-        default=False,
-        help="Generate Matplotlib Plots?",
+        "-pl", "--plot", action="store_true", default=False, help="Generate Plots?"
+    )
+    parser.add_argument(
+        "-s",
+        "--school",
+        nargs="?",
+        type=float,
+        const=0.10,
+        default=None,
+        help="Percentage of Schools for Testing",
     )
 
-    return parser.parse_args()
+    return parser.parse_args()  # Return the parsed arguments
 
 
+# Function to train the model for one epoch
 def train(
     dataloader: data_utils.DataLoader,
     model: nn.Module,
     loss_fn: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
-) -> None:
+) -> list[float]:
     size = len(dataloader.dataset)
+    current = 0
+    loss_list = []  # List to store loss values for each batch
     for batch, (x, y) in enumerate(dataloader):
         x, y = x.to(device), y.to(device)
 
-        pred = model(x)
-        loss = loss_fn(pred, y.view(-1, 1))
+        pred = model(x)  # Model prediction
+        loss = loss_fn(pred, y.view(-1, 1))  # Calculate the loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer.zero_grad()  # Reset the gradients
+        loss.backward()  # Backpropagate the loss
+        optimizer.step()  # Update the model's parameters
+        loss, current = loss.item(), batch * len(x)
+        loss_list.append(loss)
+
         if batch % 10 == 0:
-            loss, current = loss.item(), batch * len(x)
+            print(
+                f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]"
+            )  # Print loss every 10 batches
 
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+    return loss_list  # Return the loss for each batch
 
 
+# Function to test the model
 def test(
     dataloader: data_utils.DataLoader,
     model: nn.Module,
@@ -202,22 +251,23 @@ def test(
             x, y = x.to(device), y.to(device)
             pred = model(x)
 
-            all_preds.append(pred.cpu().detach().numpy())
-            all_true.append(y.cpu().detach().numpy())
+            all_preds.append(pred.cpu().detach().numpy())  # Store predictions
+            all_true.append(y.cpu().detach().numpy())  # Store true values
 
-            test_loss += loss_fn(pred, y.view(-1, 1)).item()
+            test_loss += loss_fn(pred, y.view(-1, 1)).item()  # Accumulate loss
 
+    # Calculate final average loss and R² score
     all_preds = np.concatenate(all_preds, axis=0)
     all_true = np.concatenate(all_true, axis=0)
-
     test_loss /= num_batches
 
-    r2 = r2_score(all_true, all_preds)
+    r2 = r2_score(all_true, all_preds)  # Calculate R² score
 
-    print(f"Test MSE: {test_loss:>8f} R²: {r2:.4f}")
+    print(f"Test MSE: {test_loss:>8f} R²: {r2:.4f}")  # Print the results
     return test_loss, r2
 
 
+# Function to create a line plot
 def create_Plot(
     x_axis: list[int], y_axis: list[float], x_title: str, y_title: str, plot_title: str
 ) -> None:
@@ -225,61 +275,120 @@ def create_Plot(
     plt.xlabel(x_title)
     plt.ylabel(y_title)
     plt.title(plot_title)
-
     plt.show()
 
 
+# Function to create a scatter plot
+def create_Scatter_Plot(
+    x_axis: list[int], y_axis: list[float], x_title: str, y_title: str, plot_title: str
+) -> None:
+    plt.scatter(x_axis, y_axis)
+    plt.xlabel(x_title)
+    plt.ylabel(y_title)
+    plt.title(plot_title)
+    plt.show()
+
+
+# Main function to execute the program
 def main() -> None:
     mse_list = []
     r2_list = []
-    ARGS = parse_Arguments()
-    DATASET = load_Dataset(ARGS.file)
+    ARGS = parse_Arguments()  # Parse command-line arguments
+    DATASET = load_Dataset(ARGS.file)  # Load the dataset
     BATCH_SIZE = ARGS.batch
     TRAINING_SPLIT_PERCENT = ARGS.percent
+    TRAINING_SPLIT_SCHOOL = ARGS.school
     TRAINING_SPLIT_YEARS = [ARGS.years[0], ARGS.years[1]]
-    TEST_FRAME, SCALER = get_Testset(
-        DATASET, TRAINING_SPLIT_PERCENT, TRAINING_SPLIT_YEARS
+    SAVE = ARGS.save
+    TESTFILE = ARGS.test
+    TRAINFILE = ARGS.train
+
+    # Get training and test datasets
+    TRAINING_FRAME, TEST_FRAME = get_Datasets(
+        dataset=DATASET,
+        trainingPercent=TRAINING_SPLIT_PERCENT,
+        trainingSchool=TRAINING_SPLIT_SCHOOL,
+        trainingYears=TRAINING_SPLIT_YEARS,
+        save=SAVE,
+        trainFile=TRAINFILE,
+        testFile=TESTFILE,
     )
-    TRAINING_FRAME = get_Trainingset(
-        DATASET, TEST_FRAME, TRAINING_SPLIT_PERCENT, TRAINING_SPLIT_YEARS, SCALER
-    )
+
     EPOCHS = ARGS.epochs
     LEARNING_RATE = ARGS.learn
     ENABLE_PLOT = ARGS.plot
 
-    train_Loader = create_Datasets(TRAINING_FRAME, BATCH_SIZE)
-    test_Loader = create_Datasets(TEST_FRAME, BATCH_SIZE)
+    # Create DataLoader for training and testing
+    train_Loader = create_Datasets(dataset=TRAINING_FRAME, batch_size=BATCH_SIZE)
+    test_Loader = create_Datasets(dataset=TEST_FRAME, batch_size=BATCH_SIZE)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(0)
+    device = torch.device(
+        "cuda:0" if torch.cuda.is_available() else "cpu"
+    )  # Check for CUDA availability
+    torch.manual_seed(0)  # Set a random seed for reproducibility
 
+    # Define model architecture
     MODEL = nn.Sequential(
         nn.Linear(12, BATCH_SIZE),
         nn.ReLU(),
         nn.Linear(BATCH_SIZE, BATCH_SIZE),
         nn.ReLU(),
-        nn.Linear(BATCH_SIZE, 1),
+        nn.Linear(BATCH_SIZE, BATCH_SIZE // 2),
+        nn.ReLU(),
+        nn.Linear(BATCH_SIZE // 2, BATCH_SIZE // 4),
+        nn.ReLU(),
+        nn.Linear(BATCH_SIZE // 4, 1),  # Output layer
     ).to(device)
 
-    loss_function = nn.MSELoss()
-    optimizer = torch.optim.SGD(MODEL.parameters(), lr=LEARNING_RATE)
+    loss_function = nn.MSELoss()  # Mean squared error loss
+    optimizer = torch.optim.SGD(
+        MODEL.parameters(), lr=LEARNING_RATE
+    )  # Stochastic gradient descent optimizer
 
-    # Simulating training
-
+    # Simulate training for multiple epochs
+    loss_list = []
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n")
-        train(train_Loader, MODEL, loss_function, optimizer, device)
-        mse, r2 = test(test_Loader, MODEL, loss_function, device)
+        loss_list += train(
+            dataloader=train_Loader,
+            model=MODEL,
+            loss_fn=loss_function,
+            optimizer=optimizer,
+            device=device,
+        )
+        mse, r2 = test(
+            dataloader=test_Loader, model=MODEL, loss_fn=loss_function, device=device
+        )
         mse_list.append(mse)
         r2_list.append(r2)
 
     print("Finished!")
 
+    # Generate plots if required
     if ENABLE_PLOT:
-        create_Plot(list(range(EPOCHS)), r2_list, "Epoch", "R2", "R2 Over Time")
+        create_Plot(
+            x_axis=list(range(EPOCHS)),
+            y_axis=r2_list,
+            x_title="Epoch",
+            y_title="R2",
+            plot_title="R2 Over Time",
+        )
+        create_Plot(
+            x_axis=list(range(EPOCHS)),
+            y_axis=mse_list,
+            x_title="Epoch",
+            y_title="MSE",
+            plot_title="MSE Over Time",
+        )
 
-        create_Plot(list(range(EPOCHS)), mse_list, "Epoch", "MSE", "MSE Over Time")
+        create_Scatter_Plot(
+            x_axis=list(range(EPOCHS)),
+            y_axis=mse_list,
+            x_title="Epoch",
+            y_title="Loss",
+            plot_title="Loss Over Time",
+        )
 
 
 if __name__ == "__main__":
-    main()
+    main()  # Execute the main function
